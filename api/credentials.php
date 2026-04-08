@@ -106,9 +106,12 @@ switch ($action) {
         if (!$isOwner) {
             $stmt = $db->prepare(
                 'SELECT id, type FROM access_requests
-                 WHERE type IN ("add_to_company", "invite_technician") AND company_id = ? AND requester_id = ? AND status = ? LIMIT 1'
+                 WHERE (
+                     (type = "add_to_company" AND requester_id = ?)
+                     OR (type = "invite_technician" AND owner_id = ?)
+                 ) AND company_id = ? AND status = ? LIMIT 1'
             );
-            $stmt->execute([$companyId, $userId, 'approved']);
+            $stmt->execute([$userId, $userId, $companyId, 'approved']);
             $req = $stmt->fetch();
             if (!$req) jsonResponse(false, null, 'Sem autorização para adicionar credenciais a esta empresa.', 403);
             $addRequestId = $req['id'];
@@ -162,12 +165,30 @@ switch ($action) {
         if (!$row) jsonResponse(false, null, 'Credencial não encontrada.', 404);
         if (!$row['encrypted_aes_key']) jsonResponse(false, null, 'Sem acesso a esta credencial.', 403);
 
-        // BURN ON READ: Se o utilizador atual NÃO for o criador da credencial
-        // A chave é descartada da BD imediatamente! Ela fica apenas na memória local ($inlineScript) até a aba/modal fechar.
-        // O dono da empresa TAMBÉM é afetado por esta restrição para maximizar a segurança (tem de pedir de novo, ou re-aproveitar a da "auto-encriptação" logo a seguir mas assim que fecha a aba, a BD perde o registo).
+        // BURN ON READ: Se o utilizador atual NÃO for o criador da credencial e não for um técnico convidado
+        // A chave é descartada da BD imediatamente para acessos únicos (view_credential).
         if ((int)$row['added_by'] !== $userId) {
-            $db->prepare('DELETE FROM credential_keys WHERE credential_id = ? AND user_id = ?')
-               ->execute([$credId, $userId]);
+            $isPermanent = false;
+
+            // Verificar se é dono (se quisermos que donos também sejam permanentes, podemos adicionar aqui, mas mantêmos só para técnico convidado agora)
+            
+            // Verificar se é um técnico convidado com acesso permanente
+            $stmt = $db->prepare(
+                'SELECT id FROM access_requests
+                 WHERE (
+                     (type = "add_to_company" AND requester_id = ?)
+                     OR (type = "invite_technician" AND owner_id = ?)
+                 ) AND company_id = ? AND status = "approved" LIMIT 1'
+            );
+            $stmt->execute([$userId, $userId, $row['company_id']]);
+            if ($stmt->fetch()) {
+                $isPermanent = true;
+            }
+
+            if (!$isPermanent) {
+                $db->prepare('DELETE FROM credential_keys WHERE credential_id = ? AND user_id = ?')
+                   ->execute([$credId, $userId]);
+            }
         }
 
         jsonResponse(true, $row);

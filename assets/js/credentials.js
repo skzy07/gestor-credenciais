@@ -20,6 +20,7 @@ const CredentialsManager = {
             return;
         }
         await this.loadCredentials();
+        await this.loadTechnicians();
         this.bindEvents();
     },
 
@@ -68,14 +69,67 @@ const CredentialsManager = {
           </div>`;
     },
 
+    async loadTechnicians() {
+        const list = document.getElementById('technicians-list');
+        if (!list) return;
+
+        const r = await API.get(`api/companies.php?action=list_technicians&company_id=${this.companyId}`);
+        if (!r.success) { list.innerHTML = `<div class="alert alert-error" style="border-radius:4px">${r.error}</div>`; return; }
+
+        const { technicians } = r.data;
+        if (!technicians.length) {
+            list.innerHTML = `
+              <div class="empty-state" style="padding:10px">
+                <div class="empty-text" style="font-size:0.8rem">Nenhum técnico autorizado.</div>
+              </div>`;
+            return;
+        }
+
+        list.innerHTML = technicians.map(t => {
+            const initials = String(t.username).substring(0,2).toUpperCase();
+            const removeBtn = this.isOwner ? `<button class="btn btn-icon btn-remove-tech" data-id="${t.id}" title="Remover Técnico" style="color:var(--red);margin-left:auto;font-size:1.1rem;background:transparent;border:none;cursor:pointer">✕</button>` : '';
+            return `
+              <div class="technician-item" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--glass-b)">
+                 <div class="owner-dot" style="background:${escHtml(t.avatar_color)};width:30px;height:30px;font-size:0.7rem">${escHtml(initials)}</div>
+                 <div style="font-size:0.85rem">
+                    <div style="font-weight:600">${escHtml(t.username)}</div>
+                 </div>
+                 ${removeBtn}
+              </div>
+            `;
+        }).join('');
+    },
+
+    async removeTechnician(techId) {
+        if (!confirm('🚨 Atenção: Ao remover este técnico, todo o acesso E2EE às credenciais desta empresa será apagado imediatamente (Burn-on-Revoke). Tens a certeza?')) return;
+        
+        const btnList = document.querySelectorAll(`.btn-remove-tech[data-id="${techId}"]`);
+        btnList.forEach(b => setLoading(b, true, ''));
+
+        const r = await API.post('api/companies.php?action=remove_technician', {
+            company_id: this.companyId,
+            technician_id: techId
+        });
+
+        if (r.success) {
+            Toast.success('Técnico removido e acessos revogados.');
+            await this.loadTechnicians();
+        } else {
+            Toast.error(r.error);
+            btnList.forEach(b => setLoading(b, false));
+        }
+    },
+
+
     async viewCredential(credId) {
         const r = await API.get(`api/credentials.php?action=get_encrypted&credential_id=${credId}`);
         if (!r.success) { Toast.error(r.error); return; }
-        const { encrypted_data, iv, encrypted_aes_key } = r.data;
+        const { encrypted_data, iv, encrypted_aes_key, added_by_username } = r.data;
 
         try {
             const aesKey = await VaultCrypto.decryptCredentialKey(encrypted_aes_key, this.privateKey);
             const data   = await VaultCrypto.decryptCredential(encrypted_data, iv, aesKey);
+            data.added_by_username = added_by_username;
             this.showRevealModal(data);
         } catch (e) {
             Toast.error('Erro ao desencriptar. Chave inválida ou corrompida.');
@@ -85,6 +139,7 @@ const CredentialsManager = {
     showRevealModal(data) {
         const modal = document.getElementById('reveal-modal');
         if (!modal) return;
+        document.getElementById('reveal-added-by').textContent = data.added_by_username || '—';
         document.getElementById('reveal-username').textContent = data.username || '—';
         document.getElementById('reveal-password').textContent = data.password || '—';
         document.getElementById('reveal-url').textContent = data.url || '—';
@@ -199,9 +254,19 @@ const CredentialsManager = {
             });
         }
 
+        const techList = document.getElementById('technicians-list');
+        if (techList) {
+            techList.addEventListener('click', async e => {
+                const btn = e.target.closest('.btn-remove-tech');
+                if (btn) await this.removeTechnician(btn.dataset.id);
+            });
+        }
+
         document.addEventListener('modalClosed', async e => {
             if (e.detail === 'reveal-modal') {
                 // Ao fechar, limpa da memória da UI
+                const addedBySpan = document.getElementById('reveal-added-by');
+                if (addedBySpan) addedBySpan.textContent = '—';
                 document.getElementById('reveal-username').textContent = '—';
                 document.getElementById('reveal-password').textContent = '—';
                 document.getElementById('reveal-url').textContent = '—';

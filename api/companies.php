@@ -129,6 +129,74 @@ switch ($action) {
         jsonResponse(true, $co ?: null);
     }
 
+    // ── Listar Técnicos Autorizados ───────────────────────
+    case 'list_technicians': {
+        $companyId = (int)($_GET['company_id'] ?? 0);
+        if (!$companyId) jsonResponse(false, null, 'ID inválido.', 400);
+
+        $db = getDB();
+        
+        $stmt = $db->prepare(
+            "SELECT DISTINCT u.id, u.username, u.email, u.avatar_color
+             FROM access_requests ar
+             JOIN users u ON
+                 (ar.type = 'add_to_company' AND u.id = ar.requester_id)
+                 OR
+                 (ar.type = 'invite_technician' AND u.id = ar.owner_id)
+             WHERE ar.company_id = ? AND ar.status = 'approved'"
+        );
+        $stmt->execute([$companyId]);
+        $technicians = $stmt->fetchAll();
+
+        jsonResponse(true, ['technicians' => $technicians]);
+    }
+
+    // ── Remover Técnico da Empresa ────────────────────────
+    case 'remove_technician': {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonResponse(false, null, 'Método inválido.', 405);
+        $body      = json_decode(file_get_contents('php://input'), true) ?? [];
+        $companyId = (int)($body['company_id'] ?? 0);
+        $techId    = (int)($body['technician_id'] ?? 0);
+
+        if (!$companyId || !$techId) jsonResponse(false, null, 'Dados inválidos.', 400);
+
+        $db = getDB();
+        $stmt = $db->prepare('SELECT owner_id FROM companies WHERE id = ? LIMIT 1');
+        $stmt->execute([$companyId]);
+        $co = $stmt->fetch();
+        if (!$co || (int)$co['owner_id'] !== $userId) {
+            jsonResponse(false, null, 'Apenas o dono da empresa pode remover técnicos.', 403);
+        }
+
+        $db->beginTransaction();
+        try {
+            // Remover aprovações
+            $stmt = $db->prepare(
+                "DELETE FROM access_requests
+                 WHERE company_id = ? AND status = 'approved' AND (
+                     (type = 'add_to_company' AND requester_id = ?) OR
+                     (type = 'invite_technician' AND owner_id = ?)
+                 )"
+            );
+            $stmt->execute([$companyId, $techId, $techId]);
+
+            // Burn keys
+            $stmtKeys = $db->prepare(
+                "DELETE ck FROM credential_keys ck
+                 JOIN credentials cr ON cr.id = ck.credential_id
+                 WHERE cr.company_id = ? AND ck.user_id = ?"
+            );
+            $stmtKeys->execute([$companyId, $techId]);
+
+            $db->commit();
+        } catch (Exception $e) {
+            $db->rollBack();
+            jsonResponse(false, null, 'Erro ao remover técnico.', 500);
+        }
+
+        jsonResponse(true, null);
+    }
+
     default:
         jsonResponse(false, null, 'Ação desconhecida.', 404);
 }

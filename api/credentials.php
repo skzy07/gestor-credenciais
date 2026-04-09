@@ -131,10 +131,8 @@ switch ($action) {
                 'INSERT INTO credential_keys (credential_id, user_id, encrypted_aes_key, granted_by) VALUES (?,?,?,?)'
             )->execute([$credId, $userId, $encryptedAesKey, $userId]);
 
-            // Consumir o pedido de "adicionar à empresa" (one-time use), mas não consumir se for "invite_technician"
-            if ($addRequestId && $addRequestType === 'add_to_company') {
-                $db->prepare('DELETE FROM access_requests WHERE id = ?')->execute([$addRequestId]);
-            }
+            // O pedido de 'add_to_company' não é consumido, a fim de conceder autorização permanente para futuras adições.
+            // Para retirar acesso, usa-se a funcionalidade de "Remover Técnico".
 
             $db->commit();
         } catch (Exception $e) {
@@ -153,10 +151,11 @@ switch ($action) {
         $db = getDB();
         $stmt = $db->prepare(
             'SELECT cr.id, cr.encrypted_data, cr.iv, cr.added_by, cr.is_private, cr.company_id,
-                    ck.encrypted_aes_key, c.owner_id AS company_owner
+                    ck.encrypted_aes_key, c.owner_id AS company_owner, u.username AS added_by_username
              FROM credentials cr
              LEFT JOIN companies c ON c.id = cr.company_id
              LEFT JOIN credential_keys ck ON ck.credential_id = cr.id AND ck.user_id = ?
+             LEFT JOIN users u ON u.id = cr.added_by
              WHERE cr.id = ? LIMIT 1'
         );
         $stmt->execute([$userId, $credId]);

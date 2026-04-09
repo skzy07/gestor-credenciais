@@ -71,6 +71,13 @@ include __DIR__ . '/../includes/header.php';
       </div>
       <?php endif; ?>
 
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">Técnicos Autorizados</div>
+        <div id="technicians-list">
+          <div style="font-size:0.8rem;color:var(--t3);text-align:center;padding:10px">A carregar...</div>
+        </div>
+      </div>
+
       <div class="panel">
         <div class="panel-title">Criada em</div>
         <div style="font-size:.875rem;color:var(--t2)"><?= date('d/m/Y', strtotime($company['created_at'])) ?></div>
@@ -138,6 +145,10 @@ include __DIR__ . '/../includes/header.php';
     </div>
     <div class="credential-reveal">
       <div class="reveal-row">
+        <span class="reveal-label">Criado por</span>
+        <span class="reveal-value" id="reveal-added-by" style="font-weight:600;color:var(--t1)"></span>
+      </div>
+      <div class="reveal-row">
         <span class="reveal-label">Username</span>
         <span class="reveal-value"><span id="reveal-username"></span>
           <button class="copy-btn" data-target="reveal-username" data-label="Username">📋</button></span>
@@ -198,13 +209,10 @@ const OWNER_ID   = <?= (int)$company['owner_user_id'] ?>;
 CredentialsManager.init(COMPANY_ID, IS_OWNER, OWNER_ID);
 
 // Convidar Técnico
-const inviteModal = document.getElementById('invite-tech-modal');
 document.getElementById('btn-invite-technician')?.addEventListener('click', () => {
-    inviteModal.classList.add('active');
+    openModal('invite-tech-modal');
 });
-inviteModal?.querySelectorAll('.modal-close').forEach(btn => {
-    btn.addEventListener('click', () => inviteModal.classList.remove('active'));
-});
+
 document.getElementById('invite-tech-form')?.addEventListener('submit', async function(e) {
     e.preventDefault();
     const btn = document.getElementById('btn-submit-invite');
@@ -214,7 +222,7 @@ document.getElementById('invite-tech-form')?.addEventListener('submit', async fu
     setLoading(btn, true, 'A encriptar payload...');
     await CredentialsManager.inviteTechnician(email);
     setLoading(btn, false);
-    inviteModal.classList.remove('active');
+    closeModal('invite-tech-modal');
     this.reset();
 });
 

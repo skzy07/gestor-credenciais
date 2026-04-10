@@ -11,7 +11,7 @@ if (!$companyId) { header('Location: ' . APP_URL . '/dashboard.php'); exit; }
 
 $db   = getDB();
 $stmt = $db->prepare(
-    'SELECT c.*, u.username AS owner_username, u.avatar_color AS owner_avatar, u.id AS owner_user_id
+    'SELECT c.*, u.username AS owner_username, u.avatar_color AS owner_avatar, u.avatar_url AS owner_avatar_url, u.id AS owner_user_id
      FROM companies c JOIN users u ON u.id = c.owner_id WHERE c.id = ? LIMIT 1'
 );
 $stmt->execute([$companyId]);
@@ -51,7 +51,7 @@ include __DIR__ . '/../includes/header.php';
         </div>
         <p style="font-size:.875rem;color:var(--t2);margin-bottom:16px"><?= sanitize($company['description'] ?: 'Sem descrição.') ?></p>
         <div style="border-top:1px solid var(--glass-b);padding-top:14px;display:flex;align-items:center;gap:8px">
-          <div class="owner-dot" style="background:<?= sanitize($company['owner_avatar']) ?>"><?= sanitize(initials($company['owner_username'])) ?></div>
+          <div class="owner-dot" style="background:<?= sanitize($company['owner_avatar']) ?>;overflow:hidden;"><?php if ($company['owner_avatar_url']): ?><img src="<?= sanitize($company['owner_avatar_url']) ?>" class="avatar-img" alt="Avatar"><?php else: ?><?= sanitize(initials($company['owner_username'])) ?><?php endif; ?></div>
           <div>
             <div style="font-size:.8rem;color:var(--t3)">Dono</div>
             <div style="font-size:.875rem;font-weight:600"><?= sanitize($company['owner_username']) ?></div>

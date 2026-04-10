@@ -58,7 +58,7 @@ const CredentialsManager = {
               <div class="cred-icon">🔑</div>
               <div>
                 <div class="cred-label">${escHtml(cr.label)}</div>
-                <div class="cred-added">Adicionado por ${escHtml(cr.added_by_username)} · ${timeAgoJs(cr.created_at)}</div>
+                <div class="cred-added">Adicionado por ${escHtml(cr.added_by_username)} · ${formatDateTime(cr.created_at)}</div>
               </div>
             </div>
             <div class="cred-actions">
@@ -89,7 +89,7 @@ const CredentialsManager = {
                   <span style="background:rgba(79,142,247,0.12);color:var(--primary);padding:2px 8px;border-radius:6px;font-size:0.75rem;font-weight:600;">🏢 ${escHtml(cr.company_name)}</span>
                   <span style="color:var(--t3);font-size:0.75rem;font-family:monospace">${escHtml(cr.company_nif)}</span>
                   <span style="color:var(--t3)">·</span>
-                  <span style="color:var(--t3);font-size:0.78rem">${timeAgoJs(cr.created_at)}</span>
+                  <span style="color:var(--t3);font-size:0.78rem">${formatDateTime(cr.created_at)}</span>
                 </div>
               </div>
             </div>
@@ -123,17 +123,71 @@ const CredentialsManager = {
 
         list.innerHTML = technicians.map(t => {
             const initials = String(t.username).substring(0,2).toUpperCase();
-            const removeBtn = this.isOwner ? `<button class="btn btn-icon btn-remove-tech" data-id="${t.id}" title="Remover Técnico" style="color:var(--red);margin-left:auto;font-size:1.1rem;background:transparent;border:none;cursor:pointer">✕</button>` : '';
+            const avatarHtml = t.avatar_url 
+                ? `<img src="${escHtml(t.avatar_url)}" class="avatar-img" alt="Avatar">` 
+                : escHtml(initials);
+            const grantBtn = (this.isOwner && t.id != this.ownerId) 
+                ? `<button class="btn btn-icon btn-grant-access" data-id="${t.id}" data-username="${escHtml(t.username)}" data-pubkey="${escHtml(t.public_key)}" title="Conceder Acesso Total" style="color:var(--green);margin-left:auto;font-size:1.1rem;background:transparent;border:none;cursor:pointer">🔑</button>` 
+                : '';
+            const removeBtn = this.isOwner ? `<button class="btn btn-icon btn-remove-tech" data-id="${t.id}" title="Remover Técnico" style="color:var(--red);margin-left:${grantBtn ? '5px' : 'auto'};font-size:1.1rem;background:transparent;border:none;cursor:pointer">✕</button>` : '';
             return `
               <div class="technician-item" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--glass-b)">
-                 <div class="owner-dot" style="background:${escHtml(t.avatar_color)};width:30px;height:30px;font-size:0.7rem">${escHtml(initials)}</div>
+                 <div class="owner-dot" style="background:${escHtml(t.avatar_color)};width:30px;height:30px;font-size:0.7rem;overflow:hidden;display:flex;align-items:center;justify-content:center;">${avatarHtml}</div>
                  <div style="font-size:0.85rem">
                     <div style="font-weight:600">${escHtml(t.username)}</div>
                  </div>
+                 ${grantBtn}
                  ${removeBtn}
               </div>
             `;
         }).join('');
+    },
+
+    async grantFullAccess(techId, techPubKeyRaw, techUsername) {
+        if (!confirm(`Desejas conceder acesso total a todas as tuas credenciais atuais para o técnico ${techUsername}? \n\nIsto irá encriptar e enviar todas as chaves AES agora mesmo.`)) return;
+        
+        const btnList = document.querySelectorAll(`.btn-grant-access[data-id="${techId}"]`);
+        btnList.forEach(b => setLoading(b, true, ''));
+
+        try {
+            const techPubKey = await VaultCrypto.importPublicKey(techPubKeyRaw);
+            const myKeysRes = await API.get(`api/credentials.php?action=get_my_company_keys&company_id=${this.companyId}`);
+            if (!myKeysRes.success) throw new Error(myKeysRes.error);
+            
+            const myKeys = myKeysRes.data.keys || [];
+            const megaPayload = [];
+
+            for (const k of myKeys) {
+                try {
+                    const aesKey = await VaultCrypto.decryptCredentialKey(k.encrypted_aes_key, this.privateKey);
+                    const techEncAes = await VaultCrypto.encryptCredentialKey(aesKey, techPubKey);
+                    megaPayload.push({ credential_id: k.credential_id, encrypted_aes_key: techEncAes });
+                } catch(e) { /* ignore single key fail */ }
+            }
+
+            if (megaPayload.length === 0) {
+                Toast.info('Não tens chaves para partilhar.');
+                btnList.forEach(b => setLoading(b, false));
+                return;
+            }
+
+            const r = await API.post('api/companies.php?action=grant_all_keys', {
+                company_id: this.companyId,
+                technician_id: techId,
+                encrypted_keys: megaPayload
+            });
+
+            if (r.success) {
+                Toast.success(`Acesso total concedido! (${r.data.count} chaves partilhadas)`);
+            } else {
+                Toast.error(r.error);
+            }
+        } catch (e) {
+            console.error(e);
+            Toast.error('Erro ao processar chaves criptográficas.');
+        }
+
+        btnList.forEach(b => setLoading(b, false));
     },
 
     async removeTechnician(techId) {
@@ -374,11 +428,16 @@ const CredentialsManager = {
             setLoading(btn, false);
         });
 
-        const techList = document.getElementById('technicians-list');
         if (techList) {
             techList.addEventListener('click', async e => {
-                const btn = e.target.closest('.btn-remove-tech');
-                if (btn) await this.removeTechnician(btn.dataset.id);
+                const removeBtn = e.target.closest('.btn-remove-tech');
+                const grantBtn  = e.target.closest('.btn-grant-access');
+                
+                if (removeBtn) await this.removeTechnician(removeBtn.dataset.id);
+                if (grantBtn) {
+                    const d = grantBtn.dataset;
+                    await this.grantFullAccess(d.id, d.pubkey, d.username);
+                }
             });
         }
 
@@ -426,10 +485,18 @@ const CredentialsManager = {
 function escHtml(str) {
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-function timeAgoJs(dt) {
-    const diff = (Date.now() - new Date(dt).getTime()) / 1000;
-    if (diff < 60)     return 'agora';
-    if (diff < 3600)   return Math.floor(diff/60) + ' min';
-    if (diff < 86400)  return Math.floor(diff/3600) + 'h';
-    return Math.floor(diff/86400) + 'd atrás';
+function formatDateTime(dtStr) {
+    if (!dtStr) return '—';
+    const d = new Date(dtStr.replace(/-/g, '/')); 
+    if (isNaN(d.getTime())) return dtStr;
+
+    const pad = (n) => String(n).padStart(2, '0');
+    
+    const day = pad(d.getDate());
+    const month = pad(d.getMonth() + 1);
+    const year = d.getFullYear();
+    const hours = pad(d.getHours());
+    const mins = pad(d.getMinutes());
+    
+    return `${day}/${month}/${year} ${hours}:${mins}`;
 }

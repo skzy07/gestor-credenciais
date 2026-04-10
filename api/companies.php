@@ -158,7 +158,7 @@ switch ($action) {
         $db = getDB();
         
         $stmt = $db->prepare(
-            "SELECT DISTINCT u.id, u.username, u.email, u.avatar_color
+            "SELECT DISTINCT u.id, u.username, u.email, u.avatar_color, u.avatar_url, u.public_key
              FROM access_requests ar
              JOIN users u ON
                  (ar.type = 'add_to_company' AND u.id = ar.requester_id)
@@ -170,6 +170,59 @@ switch ($action) {
         $technicians = $stmt->fetchAll();
 
         jsonResponse(true, ['technicians' => $technicians]);
+    }
+
+    // ── Conceder Acesso Total (Dono empurra todas as chaves) ─────
+    case 'grant_all_keys': {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonResponse(false, null, 'Método inválido.', 405);
+        $body      = json_decode(file_get_contents('php://input'), true) ?? [];
+        $companyId = (int)($body['company_id'] ?? 0);
+        $techId    = (int)($body['technician_id'] ?? 0);
+        $keys      = $body['encrypted_keys'] ?? []; // Array de { credential_id, encrypted_aes_key }
+
+        if (!$companyId || !$techId || empty($keys)) jsonResponse(false, null, 'Dados em falta.', 400);
+
+        $db = getDB();
+
+        // 1. Validar Dono
+        $stmt = $db->prepare('SELECT owner_id FROM companies WHERE id = ? LIMIT 1');
+        $stmt->execute([$companyId]);
+        $co = $stmt->fetch();
+        if (!$co || (int)$co['owner_id'] !== $userId) {
+            jsonResponse(false, null, 'Não és o dono desta empresa.', 403);
+        }
+
+        // 2. Validar que o técnico é membro
+        $stmt = $db->prepare(
+            "SELECT id FROM access_requests 
+             WHERE company_id = ? AND status = 'approved' AND (
+                 (type = 'add_to_company' AND requester_id = ?) OR
+                 (type = 'invite_technician' AND owner_id = ?)
+             ) LIMIT 1"
+        );
+        $stmt->execute([$companyId, $techId, $techId]);
+        if (!$stmt->fetch()) {
+            jsonResponse(false, null, 'Este utilizador não é técnico desta empresa.', 404);
+        }
+
+        // 3. Inserir/Atualizar chaves
+        $db->beginTransaction();
+        try {
+            $insertKey = $db->prepare(
+                'INSERT INTO credential_keys (credential_id, user_id, encrypted_aes_key, granted_by)
+                 VALUES (?,?,?,?)
+                 ON DUPLICATE KEY UPDATE encrypted_aes_key = VALUES(encrypted_aes_key)'
+            );
+            foreach ($keys as $k) {
+                $insertKey->execute([ (int)$k['credential_id'], $techId, $k['encrypted_aes_key'], $userId ]);
+            }
+            $db->commit();
+        } catch (Exception $e) {
+            $db->rollBack();
+            jsonResponse(false, null, 'Erro ao conceder chaves.', 500);
+        }
+
+        jsonResponse(true, ['count' => count($keys)]);
     }
 
     // ── Remover Técnico da Empresa ────────────────────────

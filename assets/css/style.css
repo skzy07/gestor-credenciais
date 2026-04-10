@@ -636,3 +636,33 @@ body::before {
   width: 64px; height: 64px; border-radius: var(--r-md);
   object-fit: cover; flex-shrink: 0;
 }
+
+/* Gear button for managing company */
+.company-card-wrapper {
+  position: relative;
+}
+.btn-manage-gear {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  background: var(--glass);
+  border: 1px solid var(--glass-b);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--t2);
+  transition: all var(--tr);
+  z-index: 10;
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 1rem;
+}
+.btn-manage-gear:hover {
+  background: var(--glass-h);
+  border-color: var(--blue);
+  color: var(--blue);
+  transform: rotate(45deg);
+}

@@ -216,6 +216,55 @@ switch ($action) {
         jsonResponse(true, null);
     }
 
+    // ── Todas as credenciais do utilizador (aba global) ───
+    case 'my_credentials': {
+        $db = getDB();
+        $stmt = $db->prepare(
+            "SELECT cr.id, cr.label, cr.iv, cr.is_private, cr.created_at,
+                    cr.added_by, cr.company_id,
+                    u.username AS added_by_username,
+                    (cr.added_by = ?) AS is_mine,
+                    (ck.id IS NOT NULL) AS has_access,
+                    co.name AS company_name,
+                    co.nif  AS company_nif
+             FROM credentials cr
+             JOIN users u ON u.id = cr.added_by
+             JOIN companies co ON co.id = cr.company_id
+             LEFT JOIN credential_keys ck ON ck.credential_id = cr.id AND ck.user_id = ?
+             WHERE cr.added_by = ? OR ck.user_id = ?
+             ORDER BY cr.created_at DESC"
+        );
+        $stmt->execute([$userId, $userId, $userId, $userId]);
+        jsonResponse(true, ['credentials' => $stmt->fetchAll()]);
+    }
+
+    // ── Editar credencial (só o criador) ─────────────────
+    case 'update': {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonResponse(false, null, 'Método inválido.', 405);
+        $body   = json_decode(file_get_contents('php://input'), true) ?? [];
+        $credId = (int)($body['credential_id'] ?? 0);
+        $label  = trim($body['label'] ?? '');
+        $encData = $body['encrypted_data'] ?? '';
+        $iv      = $body['iv'] ?? '';
+
+        if (!$credId || !$label || !$encData || !$iv)
+            jsonResponse(false, null, 'Dados obrigatórios em falta.', 400);
+
+        $db = getDB();
+        $stmt = $db->prepare('SELECT added_by FROM credentials WHERE id = ? LIMIT 1');
+        $stmt->execute([$credId]);
+        $row = $stmt->fetch();
+
+        if (!$row) jsonResponse(false, null, 'Credencial não encontrada.', 404);
+        if ((int)$row['added_by'] !== $userId)
+            jsonResponse(false, null, 'Apenas o criador pode editar esta credencial.', 403);
+
+        $db->prepare('UPDATE credentials SET label=?, encrypted_data=?, iv=? WHERE id=?')
+           ->execute([$label, $encData, $iv, $credId]);
+
+        jsonResponse(true, null);
+    }
+
     default:
         jsonResponse(false, null, 'Ação desconhecida.', 404);
 }

@@ -25,7 +25,7 @@ switch ($action) {
         $params = $search ? ["%$search%", "%$search%", "%$search%"] : [];
 
         $stmt = $db->prepare(
-            "SELECT c.id, c.name, c.nif, c.description, c.created_at,
+            "SELECT c.id, c.name, c.nif, c.description, c.created_at, c.logo_url,
                     u.username AS owner_username, u.avatar_color AS owner_avatar,
                     (c.owner_id = ?) AS is_mine,
                     (SELECT COUNT(*) FROM credentials cr WHERE cr.company_id = c.id AND (cr.is_private = 0 OR cr.added_by = ?)) AS cred_count
@@ -127,6 +127,27 @@ switch ($action) {
         $stmt->execute([$userId]);
         $co = $stmt->fetch();
         jsonResponse(true, $co ?: null);
+    }
+
+    // ── Todas as Empresas do utilizador (Dono + Afiliado) ─
+    case 'my_companies': {
+        $db = getDB();
+        $stmt = $db->prepare(
+            "SELECT DISTINCT c.*, u.username AS owner_username,
+                    (c.owner_id = ?) AS is_mine
+             FROM companies c 
+             JOIN users u ON u.id = c.owner_id
+             LEFT JOIN access_requests ar ON ar.company_id = c.id
+             WHERE c.owner_id = ? 
+                OR (ar.status = 'approved' AND (
+                      (ar.type = 'add_to_company' AND ar.requester_id = ?) OR 
+                      (ar.type = 'invite_technician' AND ar.owner_id = ?)
+                   ))
+             ORDER BY c.created_at DESC"
+        );
+        $stmt->execute([$userId, $userId, $userId, $userId]);
+        $companies = $stmt->fetchAll();
+        jsonResponse(true, ['companies' => $companies]);
     }
 
     // ── Listar Técnicos Autorizados ───────────────────────

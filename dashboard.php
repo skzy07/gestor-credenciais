@@ -63,7 +63,9 @@ async function loadFeed(page = 1, query = '') {
     feed.innerHTML = companies.map(co => `
       <div class="company-card" onclick="location.href='company/view.php?id=${co.id}'">
         <div class="company-card-header">
-          <div class="company-icon">🏢</div>
+          <div class="company-icon" style="${co.logo_url ? 'padding:0;overflow:hidden;' : ''}">
+            ${co.logo_url ? `<img src="${escHtml(co.logo_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;" alt="Logo">` : '🏢'}
+          </div>
           <div style="flex:1;min-width:0">
             <div class="company-name">${escHtml(co.name)}</div>
             <div class="company-nif">NIF: ${escHtml(co.nif)}</div>

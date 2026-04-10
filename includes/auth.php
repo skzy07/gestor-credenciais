@@ -29,7 +29,7 @@ function currentUser(): ?array {
     static $user = null;
     if ($user === null) {
         $db   = getDB();
-        $stmt = $db->prepare('SELECT id, username, email, public_key, avatar_color FROM users WHERE id = ?');
+        $stmt = $db->prepare('SELECT id, username, email, public_key, avatar_color, avatar_url FROM users WHERE id = ?');
         $stmt->execute([$_SESSION['user_id']]);
         $user = $stmt->fetch() ?: null;
     }

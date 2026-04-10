@@ -8,6 +8,8 @@ const CredentialsManager = {
     companyId:  null,
     isOwner:    false,
     ownerId:    null,
+    _editAesKey: null,   // AES key em memória temporária durante edição
+    _editCredId: null,
 
     async init(companyId, isOwner, ownerId) {
         this.companyId = companyId;
@@ -47,8 +49,9 @@ const CredentialsManager = {
     },
 
     renderCredentialItem(cr) {
-        const canView  = cr.has_access;
+        const canView   = cr.has_access;
         const isPrivate = parseInt(cr.is_private);
+        const isMine    = parseInt(cr.is_mine);
         return `
           <div class="credential-item" data-cred-id="${cr.id}">
             <div class="cred-info">
@@ -64,7 +67,40 @@ const CredentialsManager = {
                 ? `<button class="btn btn-icon btn-view-cred" data-id="${cr.id}" title="Ver credencial">👁</button>`
                 : `<button class="btn btn-icon btn-request-view" data-id="${cr.id}" title="Pedir acesso">🔐</button>`
               }
-              ${parseInt(cr.is_mine) ? `<button class="btn btn-icon btn-delete-cred" data-id="${cr.id}" title="Eliminar" style="color:var(--red)">🗑</button>` : ''}
+              ${isMine && canView ? `<button class="btn btn-icon btn-edit-cred" data-id="${cr.id}" title="Editar credencial" style="color:var(--primary)">✏️</button>` : ''}
+              ${isMine ? `<button class="btn btn-icon btn-delete-cred" data-id="${cr.id}" title="Eliminar" style="color:var(--red)">🗑</button>` : ''}
+            </div>
+          </div>`;
+    },
+
+    // Versão para a página global (mostra empresa + botão ir para empresa)
+    renderGlobalCredentialItem(cr) {
+        const canView   = cr.has_access;
+        const isPrivate = parseInt(cr.is_private);
+        const isMine    = parseInt(cr.is_mine);
+        const appUrl    = document.querySelector('meta[name="app-url"]')?.content || '';
+        return `
+          <div class="credential-item" data-cred-id="${cr.id}">
+            <div class="cred-info">
+              <div class="cred-icon">🔑</div>
+              <div>
+                <div class="cred-label">${escHtml(cr.label)}</div>
+                <div class="cred-added" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+                  <span style="background:rgba(79,142,247,0.12);color:var(--primary);padding:2px 8px;border-radius:6px;font-size:0.75rem;font-weight:600;">🏢 ${escHtml(cr.company_name)}</span>
+                  <span style="color:var(--t3);font-size:0.75rem;font-family:monospace">${escHtml(cr.company_nif)}</span>
+                  <span style="color:var(--t3)">·</span>
+                  <span style="color:var(--t3);font-size:0.78rem">${timeAgoJs(cr.created_at)}</span>
+                </div>
+              </div>
+            </div>
+            <div class="cred-actions">
+              ${isPrivate ? '<span class="cred-private-badge">🔒 Privado</span>' : ''}
+              ${canView
+                ? `<button class="btn btn-icon btn-view-cred" data-id="${cr.id}" title="Ver credencial">👁</button>`
+                : `<button class="btn btn-icon btn-request-view" data-id="${cr.id}" title="Pedir acesso">🔐</button>`
+              }
+              ${isMine && canView ? `<button class="btn btn-icon btn-edit-cred" data-id="${cr.id}" title="Editar credencial" style="color:var(--primary)">✏️</button>` : ''}
+              <a href="${appUrl}/company/view.php?id=${cr.company_id}" class="btn btn-icon" title="Ir para a empresa" style="color:var(--t2);text-decoration:none">🏢</a>
             </div>
           </div>`;
     },
@@ -190,6 +226,67 @@ const CredentialsManager = {
         if (r.success) { Toast.success('Credencial eliminada.'); await this.loadCredentials(); }
         else Toast.error(r.error);
     },
+
+    async editCredential(credId) {
+        const r = await API.get(`api/credentials.php?action=get_encrypted&credential_id=${credId}`);
+        if (!r.success) { Toast.error(r.error); return; }
+        const { encrypted_data, iv, encrypted_aes_key, label } = r.data;
+
+        try {
+            const aesKey = await VaultCrypto.decryptCredentialKey(encrypted_aes_key, this.privateKey);
+            const data   = await VaultCrypto.decryptCredential(encrypted_data, iv, aesKey);
+
+            // Guardar AES key em memória temporária para re-encriptar ao guardar
+            this._editAesKey  = aesKey;
+            this._editCredId  = credId;
+
+            // Preencher o formulário
+            const form = document.getElementById('edit-cred-form');
+            form.querySelector('[name=label]').value    = data.label_override || r.data.label || '';
+            form.querySelector('[name=username]').value = data.username || '';
+            form.querySelector('[name=password]').value = data.password || '';
+            form.querySelector('[name=url]').value      = data.url || '';
+            form.querySelector('[name=notes]').value    = data.notes || '';
+            // Guardar o label original (vem do list, não do payload encriptado)
+            document.getElementById('edit-label-raw').value = r.data.label || '';
+
+            openModal('edit-cred-modal');
+        } catch(e) {
+            Toast.error('Erro ao desencriptar credencial para edição.');
+        }
+    },
+
+    async saveEditedCredential(formData) {
+        if (!this._editAesKey || !this._editCredId) { Toast.error('Sessão de edição inválida.'); return; }
+        const { label, username, password, url, notes } = formData;
+        if (!label || !username || !password) { Toast.error('Label, username e password são obrigatórios.'); return; }
+
+        try {
+            const { ciphertext, iv } = await VaultCrypto.encryptCredential({ username, password, url, notes }, this._editAesKey);
+            const r = await API.post('api/credentials.php?action=update', {
+                credential_id:  this._editCredId,
+                label,
+                encrypted_data: ciphertext,
+                iv
+            });
+            if (r.success) {
+                Toast.success('Credencial atualizada com sucesso!');
+                closeModal('edit-cred-modal');
+                this._editAesKey = null;
+                this._editCredId = null;
+                // Se estamos no contexto da empresa, recarrega a lista da empresa
+                // Caso contrário não faz nada (a página global re-carrega via evento)
+                if (this.companyId) {
+                    await this.loadCredentials();
+                }
+            } else {
+                Toast.error(r.error);
+            }
+        } catch(e) {
+            Toast.error('Erro ao encriptar os dados atualizados.');
+        }
+    },
+
     async inviteTechnician(email) {
         if (!email) return;
         // 1. Obter a chave pública do destinatário pelo e-mail
@@ -242,17 +339,40 @@ const CredentialsManager = {
     },
 
     bindEvents() {
-        const list = document.getElementById('credentials-list');
-        if (list) {
-            list.addEventListener('click', async e => {
-                const viewBtn   = e.target.closest('.btn-view-cred');
-                const reqBtn    = e.target.closest('.btn-request-view');
-                const delBtn    = e.target.closest('.btn-delete-cred');
-                if (viewBtn)  await this.viewCredential(viewBtn.dataset.id);
-                if (reqBtn)   await this.requestViewAccess(reqBtn.dataset.id);
-                if (delBtn)   await this.deleteCredential(delBtn.dataset.id);
+        const self = this;
+        // Delegação de eventos comum a qualquer lista de credenciais na página
+        const wireCredList = (el) => {
+            if (!el) return;
+            el.addEventListener('click', async e => {
+                const viewBtn = e.target.closest('.btn-view-cred');
+                const reqBtn  = e.target.closest('.btn-request-view');
+                const editBtn = e.target.closest('.btn-edit-cred');
+                const delBtn  = e.target.closest('.btn-delete-cred');
+                if (viewBtn)  await self.viewCredential(viewBtn.dataset.id);
+                if (reqBtn)   await self.requestViewAccess(reqBtn.dataset.id);
+                if (editBtn)  await self.editCredential(editBtn.dataset.id);
+                if (delBtn)   await self.deleteCredential(delBtn.dataset.id);
             });
-        }
+        };
+
+        wireCredList(document.getElementById('credentials-list'));
+        wireCredList(document.getElementById('global-credentials-list'));
+
+        // Form de edição
+        document.getElementById('edit-cred-form')?.addEventListener('submit', async e => {
+            e.preventDefault();
+            const f   = e.target;
+            const btn = f.querySelector('[type=submit]');
+            setLoading(btn, true, 'A encriptar...');
+            await this.saveEditedCredential({
+                label:    f.querySelector('[name=label]').value.trim(),
+                username: f.querySelector('[name=username]').value.trim(),
+                password: f.querySelector('[name=password]').value.trim(),
+                url:      f.querySelector('[name=url]')?.value.trim() || '',
+                notes:    f.querySelector('[name=notes]')?.value.trim() || '',
+            });
+            setLoading(btn, false);
+        });
 
         const techList = document.getElementById('technicians-list');
         if (techList) {

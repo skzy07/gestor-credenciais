@@ -38,6 +38,25 @@ include __DIR__ . '/../includes/header.php';
           <textarea name="description" id="description" class="form-textarea" placeholder="Breve descrição da empresa e serviços..."></textarea>
         </div>
 
+        <div class="form-group">
+          <label class="form-label">Logo da Empresa <span style="color:var(--t3);font-weight:400">(opcional)</span></label>
+          <div class="upload-zone" id="logo-upload-zone" style="padding:20px;">
+            <input type="file" id="logo-file-input" accept="image/jpeg,image/png,image/webp,image/gif">
+            <div class="upload-zone-icon" style="font-size:1.8rem">🏢</div>
+            <div class="upload-zone-label">Clica para selecionar um logo</div>
+            <div class="upload-zone-hint">JPG, PNG ou WebP · Máx. 5 MB</div>
+          </div>
+          <div id="logo-preview-wrap" style="display:none;margin-top:12px;">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div style="width:60px;height:60px;border-radius:var(--r-md);overflow:hidden;border:2px solid var(--blue);">
+                <img id="logo-preview-img" src="" alt="Preview" style="width:100%;height:100%;object-fit:cover;">
+              </div>
+              <div style="font-size:.85rem;color:var(--t2);">Logo selecionado — será carregado após criar a empresa</div>
+              <button type="button" id="btn-cancel-logo" class="btn btn-ghost btn-sm">✕</button>
+            </div>
+          </div>
+        </div>
+
         <button type="submit" class="btn btn-primary btn-full btn-lg" id="create-btn">Registar Empresa</button>
       </form>
     </div>
@@ -90,6 +109,13 @@ document.getElementById('create-company-form').addEventListener('submit', async 
     const r = await API.post('api/companies.php?action=create', { name, nif, description });
 
     if (r.success) {
+        // Se tem logo selecionado, faz upload agora
+        const logoFile = document.getElementById('logo-file-input')?.files[0];
+        if (logoFile && r.data.company_id) {
+            const fd = new FormData();
+            fd.append('photo', logoFile);
+            await fetch(`../api/upload.php?type=company_logo&company_id=${r.data.company_id}`, { method: 'POST', body: fd });
+        }
         Toast.success('Empresa registada com sucesso!');
         setTimeout(() => location.href = '../company/view.php?id=' + r.data.company_id, 1200);
     } else {
@@ -97,6 +123,25 @@ document.getElementById('create-company-form').addEventListener('submit', async 
         alert.style.display = 'flex';
         setLoading(btn, false);
     }
+});
+
+// Logo preview
+const logoInput  = document.getElementById('logo-file-input');
+const logoZone   = document.getElementById('logo-upload-zone');
+const logoPrevWrap = document.getElementById('logo-preview-wrap');
+const logoPrevImg  = document.getElementById('logo-preview-img');
+const btnCancelLogo = document.getElementById('btn-cancel-logo');
+
+logoInput?.addEventListener('change', () => {
+    if (logoInput.files[0]) {
+        const reader = new FileReader();
+        reader.onload = e => { logoPrevImg.src = e.target.result; logoPrevWrap.style.display = 'block'; };
+        reader.readAsDataURL(logoInput.files[0]);
+    }
+});
+
+btnCancelLogo?.addEventListener('click', () => {
+    logoPrevWrap.style.display = 'none'; logoInput.value = '';
 });
 <?php
 $inlineScript = ob_get_clean();

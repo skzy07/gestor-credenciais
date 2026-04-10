@@ -39,7 +39,11 @@ include __DIR__ . '/../includes/header.php';
     <div>
       <div class="card card-glow-blue" style="margin-bottom:16px">
         <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
-          <div class="company-icon" style="width:52px;height:52px;font-size:1.4rem">🏢</div>
+          <div class="company-icon" style="width:52px;height:52px;font-size:1.4rem;overflow:hidden;">
+            <?php if (!empty($company['logo_url'])): ?>
+              <img src="<?= sanitize($company['logo_url']) ?>" class="company-logo-img" alt="Logo da empresa">
+            <?php else: ?>🏢<?php endif; ?>
+          </div>
           <div>
             <div style="font-size:1.2rem;font-weight:800"><?= sanitize($company['name']) ?></div>
             <div style="font-size:.78rem;color:var(--t3);font-family:monospace">NIF: <?= sanitize($company['nif']) ?></div>
@@ -197,6 +201,47 @@ include __DIR__ . '/../includes/header.php';
     </form>
   </div>
 </div>
+
+<!-- Modal: Editar Credencial -->
+<div class="modal-overlay" id="edit-cred-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">✏️ Editar Credencial</div>
+      <button class="modal-close">✕</button>
+    </div>
+    <form id="edit-cred-form">
+      <input type="hidden" id="edit-label-raw">
+      <div class="form-group">
+        <label class="form-label">Etiqueta *</label>
+        <input type="text" name="label" class="form-input" placeholder="Ex: FTP Servidor, cPanel, SSH..." required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Username *</label>
+        <input type="text" name="username" class="form-input" autocomplete="off" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password *</label>
+        <div class="input-group">
+          <input type="password" name="password" class="form-input" required autocomplete="new-password">
+          <span class="input-suffix toggle-password">👁</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">URL / Endereço</label>
+        <input type="text" name="url" class="form-input" placeholder="https://...">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notas</label>
+        <textarea name="notes" class="form-textarea" placeholder="Informações adicionais..."></textarea>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:4px">
+        <button type="button" class="btn btn-ghost modal-close">Cancelar</button>
+        <button type="submit" class="btn btn-primary">🔐 Guardar Alterações</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 
 <?php
 $extraScripts = ['credentials.js'];

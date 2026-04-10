@@ -571,3 +571,68 @@ body::before {
   .container { padding: 0 16px; }
   .modal { padding: 24px 18px; }
 }
+
+/* ── Avatar / Logo Upload ────────────────────────────── */
+.upload-zone {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 12px;
+  border: 2px dashed var(--glass-b); border-radius: var(--r-lg);
+  padding: 32px 20px; cursor: pointer;
+  transition: all var(--tr); position: relative; overflow: hidden;
+  background: var(--glass);
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--blue); background: var(--blue-glow);
+}
+.upload-zone input[type=file] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+}
+.upload-zone-icon { font-size: 2.4rem; opacity: .6; }
+.upload-zone-label { font-size: .875rem; color: var(--t2); text-align: center; }
+.upload-zone-hint  { font-size: .75rem; color: var(--t3); }
+
+.avatar-preview-wrap {
+  position: relative; display: inline-block;
+}
+.avatar-preview-wrap .avatar-edit-btn {
+  position: absolute; bottom: 0; right: 0;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--blue); color: #fff;
+  border: 2px solid var(--bg-3);
+  display: flex; align-items: center; justify-content: center;
+  font-size: .7rem; cursor: pointer; transition: background var(--tr);
+}
+.avatar-preview-wrap .avatar-edit-btn:hover { background: var(--blue-d); }
+
+/* Foto de perfil circular */
+.avatar-img {
+  width: 100%; height: 100%; border-radius: 50%;
+  object-fit: cover; display: block;
+}
+/* Logo da empresa (quadrado com arredondamento) */
+.company-logo-img {
+  width: 100%; height: 100%;
+  border-radius: inherit;
+  object-fit: cover; display: block;
+}
+
+/* Logo grande na página de manage/view */
+.company-logo-lg {
+  width: 80px; height: 80px; border-radius: var(--r-lg);
+  background: linear-gradient(135deg, var(--blue-glow), var(--green-glow));
+  border: 1px solid var(--glass-b-a);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2rem; overflow: hidden; flex-shrink: 0;
+}
+
+/* Zona de preview do logo já carregado */
+.logo-preview-wrap {
+  display: flex; align-items: center; gap: 16px;
+  padding: 16px; background: var(--glass);
+  border-radius: var(--r-lg); border: 1px solid var(--glass-b);
+  margin-bottom: 16px;
+}
+.logo-preview-img {
+  width: 64px; height: 64px; border-radius: var(--r-md);
+  object-fit: cover; flex-shrink: 0;
+}
